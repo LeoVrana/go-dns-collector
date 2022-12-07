@@ -9,6 +9,7 @@ import (
 
 	"github.com/dmachard/go-dnscollector/dnsutils"
 	"github.com/dmachard/go-logger"
+	"github.com/weppos/publicsuffix-go/publicsuffix"
 	"gopkg.in/fsnotify.v1"
 	"inet.af/netaddr"
 )
@@ -24,8 +25,11 @@ type FilteringProcessor struct {
 	listFqdns            map[string]bool
 	listDomainsRegex     map[string]*regexp.Regexp
 	listKeepFqdns        map[string]bool
+	listDropFqdnInclSubs map[string]bool
+	listKeepFqdnInclSubs map[string]bool
 	listKeepDomainsRegex map[string]*regexp.Regexp
 	fileWatcher          *fsnotify.Watcher
+	psl                  *publicsuffix.List
 	name                 string
 	downsample           int
 	downsampleCount      int
@@ -49,7 +53,9 @@ func NewFilteringProcessor(config *dnsutils.ConfigTransformers, logger *logger.L
 		listFqdns:            make(map[string]bool),
 		listDomainsRegex:     make(map[string]*regexp.Regexp),
 		listKeepFqdns:        make(map[string]bool),
+		listDropFqdnInclSubs: make(map[string]bool),
 		listKeepDomainsRegex: make(map[string]*regexp.Regexp),
+		listKeepFqdnInclSubs: make(map[string]bool),
 		fileWatcher:          watcher,
 		name:                 name,
 	}
@@ -87,12 +93,20 @@ func (p *FilteringProcessor) LoadActiveFilters() {
 		p.activeFilters = append(p.activeFilters, p.dropFqdnFilter)
 	}
 
+	if len(p.listDropFqdnInclSubs) > 0 {
+		p.activeFilters = append(p.activeFilters, p.dropFqdnInclSubsFilter)
+	}
+
 	if len(p.listDomainsRegex) > 0 {
 		p.activeFilters = append(p.activeFilters, p.dropDomainRegexFilter)
 	}
 
 	if len(p.listKeepFqdns) > 0 {
 		p.activeFilters = append(p.activeFilters, p.keepFqdnFilter)
+	}
+
+	if len(p.listKeepFqdnInclSubs) > 0 {
+		p.activeFilters = append(p.activeFilters, p.keepFqdnInclSubsFilter)
 	}
 
 	if len(p.listKeepDomainsRegex) > 0 {
@@ -214,6 +228,22 @@ func (p *FilteringProcessor) LoadDomainsList() {
 		}
 	}
 
+	if len(p.config.Filtering.DropFqdnInclSubsFile) > 0 {
+		file, err := os.Open(p.config.Filtering.DropFqdnInclSubsFile)
+		if err != nil {
+			p.LogError("unable to open DropFqdnInclSubs file: ", err)
+			p.dropDomains = false
+		} else {
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				d := strings.ToLower(scanner.Text())
+				p.listDropFqdnInclSubs[d] = true
+			}
+			p.LogInfo("loaded with %d fqdns to the keep list", len(p.listDropFqdnInclSubs))
+			p.dropDomains = true
+		}
+	}
+
 	if len(p.config.Filtering.KeepFqdnFile) > 0 {
 		file, err := os.Open(p.config.Filtering.KeepFqdnFile)
 		if err != nil {
@@ -244,6 +274,32 @@ func (p *FilteringProcessor) LoadDomainsList() {
 			p.LogInfo("loaded with %d domains to the keep list", len(p.listKeepDomainsRegex))
 			p.keepDomains = true
 		}
+	}
+
+	if len(p.config.Filtering.KeepFqdnInclSubsFile) > 0 {
+		file, err := os.Open(p.config.Filtering.KeepFqdnInclSubsFile)
+		if err != nil {
+			p.LogError("unable to open KeepFqdnInclSubs file: ", err)
+			p.keepDomains = false
+		} else {
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				d := strings.ToLower(scanner.Text())
+				p.listKeepFqdnInclSubs[d] = true
+			}
+			p.LogInfo("loaded with %d fqdns including subdomains to the keep list", len(p.listKeepFqdnInclSubs))
+			p.keepDomains = true
+		}
+	}
+
+	if len(p.config.Filtering.PslFile) > 0 {
+		var err error
+		p.psl, err = publicsuffix.NewListFromFile(p.config.Filtering.PslFile, nil)
+		if err != nil {
+			p.psl = publicsuffix.DefaultList
+		}
+	} else {
+		p.psl = publicsuffix.DefaultList
 	}
 }
 
@@ -318,6 +374,40 @@ func (p *FilteringProcessor) keepFqdnFilter(dm *dnsutils.DnsMessage) bool {
 		return false
 	}
 	return true
+}
+
+func (p *FilteringProcessor) keepFqdnInclSubsFilter(dm *dnsutils.DnsMessage) bool {
+	// get domain
+	d, err := publicsuffix.DomainFromListWithOptions(p.psl, dm.DNS.Qname, nil)
+
+	if err != nil {
+		// drop if error in parsing name
+		p.LogError("Unable to parse EffectiveTLDPlusOne: ", dm.DNS.Qname)
+		return true
+	}
+
+	// lookup as usual
+	if _, ok := p.listKeepFqdnInclSubs[d]; ok {
+		return false
+	}
+	return true
+}
+
+func (p *FilteringProcessor) dropFqdnInclSubsFilter(dm *dnsutils.DnsMessage) bool {
+	// get domain
+	d, err := publicsuffix.DomainFromListWithOptions(p.psl, dm.DNS.Qname, nil)
+
+	if err != nil {
+		// keep if error in parsing name
+		p.LogError("Unable to parse EffectiveTLDPlusOne: ", dm.DNS.Qname)
+		return false
+	}
+
+	// lookup as usual
+	if _, ok := p.listDropFqdnInclSubs[d]; ok {
+		return true
+	}
+	return false
 }
 
 func (p *FilteringProcessor) keepDomainRegexFilter(dm *dnsutils.DnsMessage) bool {

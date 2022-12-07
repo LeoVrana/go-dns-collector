@@ -61,6 +61,8 @@ type ConfigTransformers struct {
 		LogQueries      bool     `yaml:"log-queries"`
 		LogReplies      bool     `yaml:"log-replies"`
 		Downsample      int      `yaml:"downsample"`
+		KeepFqdnInclSubsFile string   `yaml:"keep-fqdn-incl-subs-file"`
+		DropFqdnInclSubsFile string   `yaml:"drop-fqdn-incl-subs-file"`
 	} `yaml:"filtering"`
 	GeoIP struct {
 		Enable        bool   `yaml:"enable"`
@@ -106,6 +108,9 @@ func (c *ConfigTransformers) SetDefault() {
 	c.Filtering.LogQueries = true
 	c.Filtering.LogReplies = true
 	c.Filtering.Downsample = 0
+	c.Filtering.PslFile = ""
+	c.Filtering.KeepFqdnInclSubsFile = ""
+	c.Filtering.DropFqdnInclSubsFile = ""
 
 	c.GeoIP.Enable = false
 	c.GeoIP.DbCountryFile = ""
