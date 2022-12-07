@@ -377,7 +377,7 @@ func (p *FilteringProcessor) keepFqdnFilter(dm *dnsutils.DnsMessage) bool {
 }
 
 func (p *FilteringProcessor) keepFqdnInclSubsFilter(dm *dnsutils.DnsMessage) bool {
-	// get domain
+	// This filter will capture any subdomain under the domain.tld 
 	d, err := publicsuffix.DomainFromListWithOptions(p.psl, dm.DNS.Qname, nil)
 
 	if err != nil {
@@ -394,7 +394,7 @@ func (p *FilteringProcessor) keepFqdnInclSubsFilter(dm *dnsutils.DnsMessage) boo
 }
 
 func (p *FilteringProcessor) dropFqdnInclSubsFilter(dm *dnsutils.DnsMessage) bool {
-	// get domain
+	// This filter will capture any subdomain under the domain.tld 
 	d, err := publicsuffix.DomainFromListWithOptions(p.psl, dm.DNS.Qname, nil)
 
 	if err != nil {

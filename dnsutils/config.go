@@ -61,6 +61,7 @@ type ConfigTransformers struct {
 		LogQueries      bool     `yaml:"log-queries"`
 		LogReplies      bool     `yaml:"log-replies"`
 		Downsample      int      `yaml:"downsample"`
+    PslFile         string   `yaml:"psl-file"`
 		KeepFqdnInclSubsFile string   `yaml:"keep-fqdn-incl-subs-file"`
 		DropFqdnInclSubsFile string   `yaml:"drop-fqdn-incl-subs-file"`
 	} `yaml:"filtering"`

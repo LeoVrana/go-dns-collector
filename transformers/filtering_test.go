@@ -2,6 +2,7 @@ package transformers
 
 import (
 	"testing"
+  "time"
 
 	"github.com/dmachard/go-dnscollector/dnsutils"
 	"github.com/dmachard/go-logger"
@@ -118,6 +119,12 @@ func TestFilteringByFqdn(t *testing.T) {
 	if filtering.CheckIfDrop(&dm) == false {
 		t.Errorf("dns query should be dropped!")
 	}
+  
+  dm.DNS.Qname = "github.com"
+  if filtering.CheckIfDrop(&dm) == true {
+    // subdomain is in list, not the domain
+    t.Errorf("dns query should not be dropped!")
+  }
 }
 
 func TestFilteringByDomainRegex(t *testing.T) {
@@ -352,4 +359,97 @@ func TestFilteringByDropFqdnInclSubs(t *testing.T) {
 	if filtering.CheckIfDrop(&dm) == true {
 		t.Errorf("dns query should not be dropped! Domain: %s", dm.DNS.Qname)
 	}
+}
+
+func TestBenchmarkFqdnInclSubs(t *testing.T) {
+	// config
+	config := dnsutils.GetFakeConfigTransformers()
+
+	// file contains google.com, icann.org
+	config.Filtering.DropFqdnInclSubsFile = "../testsdata/filtering_drop_domains.txt"
+
+	// init subproccesor
+	filtering := NewFilteringProcessor(config, logger.New(false), "test")
+
+	dm := dnsutils.GetFakeDnsMessage()
+
+  dm.DNS.Qname = TEST_URL1 // mail.google.com
+  // drops
+  drops_start := time.Now()
+  for i := 1; i <= 10000; i++ {
+    filtering.CheckIfDrop(&dm)
+  }
+  t.Logf("Time to check 10,000 drop domains InclSubs: %v", time.Since(drops_start))
+  
+  // keeps
+  dm.DNS.Qname = "example.com"
+  keeps_start := time.Now()
+  for i := 1; i <= 10000; i++ {
+    filtering.CheckIfDrop(&dm)
+  }  
+  t.Logf("Time to check 10,000 keep domains InclSubs: %v", time.Since(keeps_start))
+
+}
+
+func TestBenchmarkFqdn(t *testing.T) {
+	// config
+	config := dnsutils.GetFakeConfigTransformers()
+
+	// file contains google.com, icann.org
+	config.Filtering.DropFqdnFile = "../testsdata/filtering_drop_domains.txt"
+
+	// init subproccesor
+	filtering := NewFilteringProcessor(config, logger.New(false), "test")
+
+	dm := dnsutils.GetFakeDnsMessage()
+  dm.DNS.Qname = "icann.org"
+  
+  //drops
+  drops_start := time.Now()
+  for i := 1; i <= 10000; i++ {
+    filtering.CheckIfDrop(&dm)
+  }
+  t.Logf("Time to check 10,000 drop domains Fqdn: %v", time.Since(drops_start))
+  
+  // keeps
+  dm.DNS.Qname = "example.com"
+  keeps_start := time.Now()
+  for i := 1; i <= 10000; i++ {
+    filtering.CheckIfDrop(&dm)
+  }
+  t.Logf("Time to check 10,000 keep domains Fqdn: %v", time.Since(keeps_start))
+}
+
+func TestBenchmarkRegex(t *testing.T) {
+	// config
+	config := dnsutils.GetFakeConfigTransformers()
+
+	/* file contains 
+  (mail|sheets)\.google\.com$
+  test\.github\.com$
+  .+\.google\.com$
+  */
+
+	config.Filtering.DropDomainFile = "../testsdata/filtering_drop_domains_regex.txt"
+
+	// init subproccesor
+	filtering := NewFilteringProcessor(config, logger.New(false), "test")
+
+	dm := dnsutils.GetFakeDnsMessage()
+  dm.DNS.Qname = "foo.bar.google.com"
+  
+  //drops
+  drops_start := time.Now()
+  for i := 1; i <= 10000; i++ {
+    filtering.CheckIfDrop(&dm)
+  }
+  t.Logf("Time to check 10,000 domains against 1,000 regexes (drop): %v", time.Since(drops_start))
+  
+  // keeps
+  dm.DNS.Qname = "example.com"
+  keeps_start := time.Now()
+  for i := 1; i <= 10000; i++ {
+    filtering.CheckIfDrop(&dm)
+  }
+  t.Logf("Time to check 10,000 domains against 1,000 regexes (keep): %v", time.Since(keeps_start))
 }
